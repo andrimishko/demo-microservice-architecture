@@ -1,0 +1,11 @@
+spring.application.name: feature-aggregator
+
+nats.url: ${NATS_URL:nats://nats:4222}
+registry.url: ${REGISTRY_URL:http://node-registry:8080}
+prometheus.url: ${PROMETHEUS_URL:http://mock-observability:8080}
+opensearch.url: ${OPENSEARCH_URL:http://mock-observability:8080}
+
+window.seconds: ${WINDOW_SECONDS:10}
+shard:
+  index: ${SHARD_INDEX:0}
+  count: ${SHARD_COUNT:1}

@@ -109,3 +109,42 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  feature-aggregator-0:
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: {MODULE: feature-aggregator}
+    environment: &aggregator-env
+      SHARD_INDEX: 0
+      SHARD_COUNT: 1
+      WINDOW_SECONDS: 10
+      NATS_URL: nats://nats:4222
+      REGISTRY_URL: http://node-registry:8080
+      PROMETHEUS_URL: http://mock-observability:8080
+      OPENSEARCH_URL: http://mock-observability:8080
+    depends_on:
+      nats: {condition: service_healthy}
+      node-registry: {condition: service_healthy}
+      mock-observability: {condition: service_healthy}
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Second shard: set SHARD_COUNT=2 in BOTH replicas (and restart the first), then add
+  #
+  # feature-aggregator-1:
+  #   build:
+  #     context: .
+  #     dockerfile: docker/service.Dockerfile
+  #     args: {MODULE: feature-aggregator}
+  #   environment:
+  #     <<: *aggregator-env
+  #     SHARD_INDEX: 1
+  #     SHARD_COUNT: 2
+  #   depends_on: <same as feature-aggregator-0>
+  #   networks: [internal]
+  #   healthcheck: <same as feature-aggregator-0>

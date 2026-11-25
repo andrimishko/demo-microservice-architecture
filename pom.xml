@@ -22,6 +22,7 @@
     <module>common</module>
     <module>mock-observability</module>
     <module>node-registry</module>
+    <module>feature-aggregator</module>
   </modules>
 
   <dependencyManagement>
