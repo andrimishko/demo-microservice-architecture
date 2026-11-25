@@ -1,0 +1,212 @@
+openapi: 3.1.0
+info:
+  title: operator-feedback API (S5)
+  version: 1.0.0
+  summary: Operator verdicts on analyses, statistics and suggestions
+  description: |
+    Reached through the nginx gateway; `engineer` and `admin` may use every operation. The author of a feedback or
+    suggestion is the `X-User` the gateway sets from the API key (a client-supplied `X-User` is overwritten).
+    A verdict publishes `feedback.submitted` (see asyncapi.yaml). Errors are RFC 9457 problem+json.
+  license: {name: Educational use, identifier: MIT}
+servers:
+  - url: http://localhost:8000/api
+security:
+  - ApiKey: []
+tags:
+  - name: feedback
+    description: Operator verdicts and statistics
+  - name: suggestions
+    description: Free-text suggestions
+paths:
+  /v1/feedback:
+    post:
+      operationId: submitFeedback
+      tags: [feedback]
+      summary: Confirm an alert or mark it as a false positive
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FeedbackRequest'}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Feedback'}
+        '400': {description: "Validation failed; `FALSE_POSITIVE` without `cause`; `MISSED` (use /v1/feedback/missed)", content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {description: No snapshot of this analysis, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '409': {description: Feedback for this analysis already exists, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '502': {$ref: '#/components/responses/GatewayError'}
+    get:
+      operationId: listFeedback
+      tags: [feedback]
+      summary: List feedback
+      parameters:
+        - {name: node_id, in: query, schema: {type: string}}
+        - {name: from, in: query, description: Feedback created at or after (ISO-8601 date-time), schema: {type: string, format: date-time}}
+        - {name: to, in: query, description: Feedback created at or before (default now), schema: {type: string, format: date-time}}
+        - {name: verdict, in: query, schema: {$ref: '#/components/schemas/Verdict'}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Feedback'}
+        '400': {description: Unparsable query parameter, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '502': {$ref: '#/components/responses/GatewayError'}
+  /v1/feedback/missed:
+    post:
+      operationId: markMissed
+      tags: [feedback]
+      summary: Mark every analysis of a node in a time range without feedback as MISSED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MissedRequest'}
+      responses:
+        '201':
+          description: One MISSED feedback (and one event) per snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [feedback_ids, marked_analyses]
+                properties:
+                  feedback_ids: {type: array, items: {type: string}}
+                  marked_analyses: {type: integer}
+        '400': {description: Validation failed or `from` is not before `to`, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {description: No snapshots without feedback in the range, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '502': {$ref: '#/components/responses/GatewayError'}
+  /v1/feedback/stats:
+    get:
+      operationId: feedbackStats
+      tags: [feedback]
+      summary: Feedback statistics of a node
+      description: "`alerts` counts non-NORMAL snapshots in the period; `fp_rate = fp/(confirmed+fp)`, `precision = confirmed/(confirmed+fp)`, 0 when the denominator is 0."
+      parameters:
+        - {name: node_id, in: query, required: true, schema: {type: string}}
+        - {name: period, in: query, description: ISO-8601 duration, schema: {type: string, default: PT1H}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Stats'}
+        '400': {description: Missing node_id or period is not an ISO-8601 duration, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '502': {$ref: '#/components/responses/GatewayError'}
+  /v1/suggestions:
+    post:
+      operationId: submitSuggestion
+      tags: [suggestions]
+      summary: Free-text suggestion from an operator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: {type: string, minLength: 1, maxLength: 2000}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, text]
+                properties:
+                  id: {type: string}
+                  text: {type: string}
+        '400': {description: Validation failed, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '502': {$ref: '#/components/responses/GatewayError'}
+components:
+  schemas:
+    Verdict:
+      type: string
+      enum: [CONFIRMED, FALSE_POSITIVE, MISSED]
+    Cause:
+      type: string
+      enum: [DEPLOY, BACKUP, NOISY_LOGS, LOAD_SPIKE, OTHER]
+      description: Why the operator considers an alert false
+    FeedbackRequest:
+      type: object
+      required: [analysis_id, verdict]
+      properties:
+        analysis_id: {type: string}
+        verdict: {type: string, enum: [CONFIRMED, FALSE_POSITIVE], description: MISSED is rejected here}
+        cause: {$ref: '#/components/schemas/Cause'}
+        comment: {type: string, maxLength: 1000}
+    MissedRequest:
+      type: object
+      required: [node_id, from, to]
+      properties:
+        node_id: {type: string, minLength: 1}
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        comment: {type: string, maxLength: 1000}
+    Feedback:
+      type: object
+      required: [feedback_id, analysis_id, node_id, verdict, author, created_at]
+      properties:
+        feedback_id: {type: string}
+        analysis_id: {type: string}
+        node_id: {type: string}
+        verdict: {$ref: '#/components/schemas/Verdict'}
+        cause: {oneOf: [{$ref: '#/components/schemas/Cause'}, {type: 'null'}]}
+        comment: {type: [string, 'null']}
+        author: {type: string, description: User of the API key (set by the gateway)}
+        created_at: {type: string, format: date-time}
+    Stats:
+      type: object
+      required: [alerts, confirmed, false_positive, missed, fp_rate, precision, top_causes]
+      properties:
+        alerts: {type: integer}
+        confirmed: {type: integer}
+        false_positive: {type: integer}
+        missed: {type: integer}
+        fp_rate: {type: number}
+        precision: {type: number}
+        top_causes:
+          type: object
+          description: Up to 3 causes of false positives with their counts
+          additionalProperties: {type: integer}
+    Problem:
+      type: object
+      description: RFC 9457 problem details
+      required: [type, title, status]
+      properties:
+        type: {type: string, examples: ['about:blank']}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        instance: {type: string}
+  responses:
+    Unauthorized:
+      description: Missing or unknown X-API-Key (produced by the gateway)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    GatewayError:
+      description: Service down or unreachable (gateway answers 502, 503 or 504)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        Demo keys come from `.env` (`ADMIN_API_KEY`, `ENGINEER_API_KEY`). The gateway maps the key to a user and
+        a role (`admin`, `engineer`) and forwards `X-User` / `X-Role` to the service (client-supplied values are overwritten).

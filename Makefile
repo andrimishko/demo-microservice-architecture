@@ -1,6 +1,6 @@
 MVN = docker run --rm -v "$(CURDIR)":/src -v soa-lab3-m2:/root/.m2 -w /src maven:3.9-eclipse-temurin-21 mvn -q -B
 
-.PHONY: build test up down ps logs nats-tail features-tail scores-tail fake-feedback alerts feedback-stats
+.PHONY: lint-contracts build test up down ps logs nats-tail features-tail scores-tail fake-feedback alerts feedback-stats
 build:
 	$(MVN) verify
 test:
@@ -42,3 +42,8 @@ alerts:
 feedback-stats:
 	docker run --rm --network soa-lab3_internal curlimages/curl -s \
 	  "http://operator-feedback:8080/v1/feedback/stats?node_id=$(or $(NODE),node-1)&period=$(or $(PERIOD),PT1H)"
+
+# validate the OpenAPI (Redocly) and AsyncAPI contracts in contracts/ (warnings are allowed, errors fail)
+lint-contracts:
+	docker run --rm -v "$(CURDIR)/contracts":/spec -w /spec redocly/cli:1.34.5 lint openapi/*.yaml
+	docker run --rm -e ASYNCAPI_METRICS=false -v "$(CURDIR)/contracts":/spec asyncapi/cli:3.4.1 validate /spec/asyncapi.yaml

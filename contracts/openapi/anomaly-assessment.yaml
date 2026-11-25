@@ -1,0 +1,77 @@
+openapi: 3.1.0
+info:
+  title: anomaly-assessment API (S4)
+  version: 1.0.0
+  summary: Read-only view of alerts
+  description: |
+    Reached through the nginx gateway, `engineer` and `admin` may read. Alerts are kept in memory and are lost on restart.
+    Note: the JSON uses camelCase (it is the serialized `Alert` record), unlike the snake_case of the other services.
+  license: {name: Educational use, identifier: MIT}
+servers:
+  - url: http://localhost:8000/api
+security:
+  - ApiKey: []
+tags:
+  - name: alerts
+    description: Alerts
+paths:
+  /v1/alerts:
+    get:
+      operationId: listAlerts
+      tags: [alerts]
+      summary: All alerts in memory
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Alert'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '502': {$ref: '#/components/responses/GatewayError'}
+components:
+  schemas:
+    Alert:
+      type: object
+      required: [alertId, nodeId, analysisId, state, score, activeRules, priority, sentAt, status]
+      properties:
+        alertId: {type: string}
+        nodeId: {type: string}
+        analysisId: {type: string, description: Analysis that opened the alert; use it as analysis_id of a feedback}
+        state: {type: string, enum: [NORMAL, WARNING, ANOMALY]}
+        score: {type: number}
+        activeRules: {type: string, description: Comma-separated rule ids, examples: ['R2,R3']}
+        priority: {type: string, enum: [P1, P2, P3], description: 'P3 for WARNING; P2 for ANOMALY; P1 after escalation'}
+        sentAt: {type: string, format: date-time}
+        status: {type: string, enum: [OPEN, ACKNOWLEDGED, ESCALATED, CLOSED]}
+
+    Problem:
+      type: object
+      description: RFC 9457 problem details
+      required: [type, title, status]
+      properties:
+        type: {type: string, examples: ['about:blank']}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        instance: {type: string}
+  responses:
+    Unauthorized:
+      description: Missing or unknown X-API-Key (produced by the gateway)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    GatewayError:
+      description: Service down or unreachable (gateway answers 502, 503 or 504)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        Demo keys come from `.env` (`ADMIN_API_KEY`, `ENGINEER_API_KEY`). The gateway maps the key to a user and
+        a role (`admin`, `engineer`) and forwards `X-User` / `X-Role` to the service (client-supplied values are overwritten).

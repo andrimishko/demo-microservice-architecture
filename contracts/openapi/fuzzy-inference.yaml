@@ -1,0 +1,212 @@
+openapi: 3.1.0
+info:
+  title: fuzzy-inference API (S3)
+  version: 1.0.0
+  summary: Management of fuzzy model versions
+  description: |
+    Reached through the nginx gateway. Roles: `GET` for `engineer` and `admin`; `POST` (upload, activate) `admin` only.
+    The service role `fuzzy-adaptation` (single replica) has no REST API, and the diagnostic `POST /v1/score`
+    is not exposed by the gateway. Activation publishes `model.activated` (see asyncapi.yaml).
+  license: {name: Educational use, identifier: MIT}
+servers:
+  - url: http://localhost:8000/api
+security:
+  - ApiKey: []
+tags:
+  - name: models
+    description: Model versions
+paths:
+  /v1/models:
+    post:
+      operationId: uploadModel
+      tags: [models]
+      summary: Upload a model artifact (admin only)
+      description: Stored as version max+1; the `version` inside the file is ignored. Not activated.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary, description: Model JSON}
+      responses:
+        '201':
+          description: Stored
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, schema_version, status]
+                properties:
+                  version: {type: integer}
+                  schema_version: {type: integer}
+                  status: {type: string, enum: [UPLOADED]}
+        '400': {description: Invalid JSON or malformed model, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {description: "`feature_names` are not a subset of the features of the last `features.built`", content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '502': {$ref: '#/components/responses/GatewayError'}
+    get:
+      operationId: listModels
+      tags: [models]
+      summary: List model versions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ModelVersion'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '502': {$ref: '#/components/responses/GatewayError'}
+  /v1/models/active:
+    get:
+      operationId: getActiveModel
+      tags: [models]
+      summary: The active model with all rules
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Model'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '502': {$ref: '#/components/responses/GatewayError'}
+  /v1/models/{v}/activate:
+    post:
+      operationId: activateModel
+      tags: [models]
+      summary: Make a version active (admin only)
+      description: Writes `active.json` and publishes `model.activated`.
+      parameters:
+        - {name: v, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Activated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, status]
+                properties:
+                  version: {type: integer}
+                  status: {type: string, enum: [ACTIVE]}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '502': {$ref: '#/components/responses/GatewayError'}
+  /v1/models/{v}/rules:
+    get:
+      operationId: getModelRules
+      tags: [models]
+      summary: Rules of a version as text, highest consequent first
+      parameters:
+        - {name: v, in: path, required: true, schema: {type: integer}}
+        - {name: top, in: query, description: Return only the k rules with the highest consequent, schema: {type: integer, minimum: 1}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {type: string, examples: ['R2: IF cpu_usage is HIGH AND http_latency_p95_seconds is HIGH THEN 0.95']}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '502': {$ref: '#/components/responses/GatewayError'}
+components:
+  schemas:
+    ModelVersion:
+      type: object
+      required: [version, status]
+      properties:
+        version: {type: integer}
+        status: {type: string, enum: [ACTIVE, UPLOADED]}
+    Term:
+      type: string
+      enum: [LOW, MEDIUM, HIGH]
+      description: Human-readable label only
+    Antecedent:
+      type: object
+      required: [feature, term, center, width]
+      description: Gaussian membership function in the normalized [0,1] space
+      properties:
+        feature: {type: string}
+        term: {$ref: '#/components/schemas/Term'}
+        center: {type: number}
+        width: {type: number, exclusiveMinimum: 0}
+    Rule:
+      type: object
+      required: [id, antecedent, consequent]
+      properties:
+        id: {type: string}
+        antecedent:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/Antecedent'}
+        consequent: {type: number, minimum: 0, maximum: 1}
+    Bounds:
+      type: object
+      required: [min, max]
+      properties:
+        min: {type: number}
+        max: {type: number, description: Must be greater than min}
+    Model:
+      type: object
+      description: Zero-order TSK model (same JSON is stored in MinIO as models/v{n}/model.json)
+      required: [version, schema_version, feature_names, normalization, rules]
+      properties:
+        version: {type: integer}
+        schema_version: {type: integer}
+        feature_names: {type: array, minItems: 1, items: {type: string}}
+        normalization:
+          type: object
+          additionalProperties: {$ref: '#/components/schemas/Bounds'}
+        rules:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/Rule'}
+    Problem:
+      type: object
+      description: RFC 9457 problem details
+      required: [type, title, status]
+      properties:
+        type: {type: string, examples: ['about:blank']}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        instance: {type: string}
+  responses:
+    Problem:
+      description: Error (see the operation's status codes)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Unauthorized:
+      description: Missing or unknown X-API-Key (produced by the gateway)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Forbidden:
+      description: The role may not use this method (produced by the gateway)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    GatewayError:
+      description: Service down or unreachable (gateway answers 502, 503 or 504)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        Demo keys come from `.env` (`ADMIN_API_KEY`, `ENGINEER_API_KEY`). The gateway maps the key to a user and
+        a role (`admin`, `engineer`) and forwards `X-User` / `X-Role` to the service (client-supplied values are overwritten).

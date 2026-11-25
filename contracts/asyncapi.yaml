@@ -1,0 +1,308 @@
+asyncapi: 3.0.0
+info:
+  title: Anomaly detection events (NATS JetStream)
+  version: 1.0.0
+  description: |
+    Choreography of S1-S5 over the JetStream stream `DETECTION` (file storage, 2 minute duplicate window).
+    Every message is an envelope `{event_id, event_type, occurred_at, schema_version, payload}`; the per-channel `payload`
+    is described by the payload schemas below. Deduplication uses the `Nats-Msg-Id` header, whose value is chosen per channel
+    (default: the envelope's `event_id`). The duplicate window is per stream, so two channels must never reuse the same id
+    (that is why `state.classified` ids are prefixed).
+  license: {name: Educational use}
+defaultContentType: application/json
+servers:
+  nats:
+    host: nats:4222
+    protocol: nats
+    description: NATS inside the compose network `soa-lab3_internal` (monitoring on host port 8222)
+channels:
+  nodeChanged:
+    address: node.changed
+    servers: [{$ref: '#/servers/nats'}]
+    description: A node was created, updated or deleted. Published after the DB commit.
+    messages:
+      nodeChanged: {$ref: '#/components/messages/NodeChanged'}
+  featuresBuilt:
+    address: features.built
+    servers: [{$ref: '#/servers/nats'}]
+    description: One feature vector per node and aggregation window (default 10 s), physical units, not normalized.
+    messages:
+      featuresBuilt: {$ref: '#/components/messages/FeaturesBuilt'}
+  scoreComputed:
+    address: score.computed
+    servers: [{$ref: '#/servers/nats'}]
+    description: Anomaly score of one window computed with one model version.
+    messages:
+      scoreComputed: {$ref: '#/components/messages/ScoreComputed'}
+  stateClassified:
+    address: state.classified
+    servers: [{$ref: '#/servers/nats'}]
+    description: Score classified against the node thresholds (also stored in the OpenSearch index analysis-results).
+    messages:
+      stateClassified: {$ref: '#/components/messages/StateClassified'}
+  feedbackSubmitted:
+    address: feedback.submitted
+    servers: [{$ref: '#/servers/nats'}]
+    description: Operator verdict with the vector that was scored.
+    messages:
+      feedbackSubmitted: {$ref: '#/components/messages/FeedbackSubmitted'}
+  modelActivated:
+    address: model.activated
+    servers: [{$ref: '#/servers/nats'}]
+    description: A model version became active (uploaded by an admin or produced by fuzzy-adaptation).
+    messages:
+      modelActivated: {$ref: '#/components/messages/ModelActivated'}
+operations:
+  publishNodeChanged:
+    action: send
+    channel: {$ref: '#/channels/nodeChanged'}
+    summary: node-registry publishes node.changed
+    description: "`Nats-Msg-Id` = `event_id` (EventPublisher default)."
+  receiveNodeChangedAggregator:
+    action: receive
+    channel: {$ref: '#/channels/nodeChanged'}
+    summary: feature-aggregator keeps its node cache up to date
+    description: Durable push consumer `feature-aggregator-<SHARD_INDEX>`, manual ack, DeliverPolicy.All.
+  receiveNodeChangedAssessment:
+    action: receive
+    channel: {$ref: '#/channels/nodeChanged'}
+    summary: anomaly-assessment keeps its threshold cache up to date
+    description: Durable push consumer `anomaly-assessment-nodes`, DeliverPolicy.All.
+  publishFeaturesBuilt:
+    action: send
+    channel: {$ref: '#/channels/featuresBuilt'}
+    summary: feature-aggregator publishes one vector per node and window
+    description: "`Nats-Msg-Id` = `<node_id>:<epoch seconds of window_start>`, so re-running a window is dropped."
+  receiveFeaturesBuilt:
+    action: receive
+    channel: {$ref: '#/channels/featuresBuilt'}
+    summary: fuzzy-inference scores the vector
+    description: Shared durable pull consumer `fuzzy-inference` (replicas share the work), explicit ack, nak with 5 s delay on failure.
+  publishScoreComputed:
+    action: send
+    channel: {$ref: '#/channels/scoreComputed'}
+    summary: fuzzy-inference publishes the score
+    description: "`Nats-Msg-Id` = `analysis_id` (deterministic UUID of node_id|window_start|model_version)."
+  receiveScoreComputed:
+    action: receive
+    channel: {$ref: '#/channels/scoreComputed'}
+    summary: anomaly-assessment classifies the score
+    description: Durable pull consumer `anomaly-assessment`; starts after the threshold cache is loaded.
+  publishStateClassified:
+    action: send
+    channel: {$ref: '#/channels/stateClassified'}
+    summary: anomaly-assessment publishes the classified state
+    description: "`Nats-Msg-Id` = `state.classified:<analysis_id>` (a bare analysis_id is already used by score.computed)."
+  receiveStateClassified:
+    action: receive
+    channel: {$ref: '#/channels/stateClassified'}
+    summary: operator-feedback stores a snapshot of the analysis
+    description: Durable push consumer `operator-feedback`; a repeated analysis_id is skipped.
+  publishFeedbackSubmitted:
+    action: send
+    channel: {$ref: '#/channels/feedbackSubmitted'}
+    summary: operator-feedback publishes the verdict
+    description: "`Nats-Msg-Id` = `feedback_id`. Published after the DB commit; `POST /v1/feedback/missed` publishes one event per snapshot."
+  receiveFeedbackAdaptation:
+    action: receive
+    channel: {$ref: '#/channels/feedbackSubmitted'}
+    summary: fuzzy-adaptation tunes rule consequents and activates a new model version
+    description: Durable push consumer `fuzzy-adaptation`, DeliverPolicy.New; malformed messages are acked and skipped.
+  receiveFeedbackAssessment:
+    action: receive
+    channel: {$ref: '#/channels/feedbackSubmitted'}
+    summary: anomaly-assessment acknowledges or closes the matching alert
+    description: Durable push consumer `anomaly-assessment-feedback`.
+  publishModelActivated:
+    action: send
+    channel: {$ref: '#/channels/modelActivated'}
+    summary: fuzzy-inference (admin activation) and fuzzy-adaptation (after feedback) publish model.activated
+    description: "`Nats-Msg-Id` = `event_id`. `templates` is always empty in this prototype."
+  receiveModelActivatedInference:
+    action: receive
+    channel: {$ref: '#/channels/modelActivated'}
+    summary: every fuzzy-inference replica reloads the version from MinIO
+    description: Plain core NATS subscription (not a queue group), so every replica receives it.
+  receiveModelActivatedAggregator:
+    action: receive
+    channel: {$ref: '#/channels/modelActivated'}
+    summary: every feature-aggregator replica only logs it and warns when the schema_version differs
+    description: Plain core NATS subscription.
+components:
+  messages:
+    NodeChanged:
+      name: node.changed
+      title: node.changed
+      headers: {$ref: '#/components/schemas/Headers'}
+      payload: {$ref: '#/components/schemas/NodeChangedEnvelope'}
+    FeaturesBuilt:
+      name: features.built
+      title: features.built
+      headers: {$ref: '#/components/schemas/Headers'}
+      payload: {$ref: '#/components/schemas/FeaturesBuiltEnvelope'}
+    ScoreComputed:
+      name: score.computed
+      title: score.computed
+      headers: {$ref: '#/components/schemas/Headers'}
+      payload: {$ref: '#/components/schemas/ScoreComputedEnvelope'}
+    StateClassified:
+      name: state.classified
+      title: state.classified
+      headers: {$ref: '#/components/schemas/Headers'}
+      payload: {$ref: '#/components/schemas/StateClassifiedEnvelope'}
+    FeedbackSubmitted:
+      name: feedback.submitted
+      title: feedback.submitted
+      headers: {$ref: '#/components/schemas/Headers'}
+      payload: {$ref: '#/components/schemas/FeedbackSubmittedEnvelope'}
+    ModelActivated:
+      name: model.activated
+      title: model.activated
+      headers: {$ref: '#/components/schemas/Headers'}
+      payload: {$ref: '#/components/schemas/ModelActivatedEnvelope'}
+  schemas:
+    Headers:
+      type: object
+      required: [Nats-Msg-Id]
+      properties:
+        Nats-Msg-Id:
+          type: string
+          description: JetStream deduplication id (value rule is given per operation)
+    Envelope:
+      type: object
+      required: [event_id, event_type, occurred_at, schema_version, payload]
+      properties:
+        event_id: {type: string, format: uuid}
+        event_type: {type: string, description: Same as the subject}
+        occurred_at: {type: string, format: date-time}
+        schema_version: {type: integer, const: 1, description: Envelope version}
+        payload: {type: object}
+    NodeChangedEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            payload: {$ref: '#/components/schemas/NodeChanged'}
+    FeaturesBuiltEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            payload: {$ref: '#/components/schemas/FeaturesBuilt'}
+    ScoreComputedEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            payload: {$ref: '#/components/schemas/ScoreComputed'}
+    StateClassifiedEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            payload: {$ref: '#/components/schemas/StateClassified'}
+    FeedbackSubmittedEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            payload: {$ref: '#/components/schemas/FeedbackSubmitted'}
+    ModelActivatedEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            payload: {$ref: '#/components/schemas/ModelActivated'}
+    Thresholds:
+      type: object
+      required: [warning, anomaly]
+      properties:
+        warning: {type: number}
+        anomaly: {type: number}
+    Bounds:
+      type: object
+      required: [min, max]
+      properties:
+        min: {type: number}
+        max: {type: number}
+    Vector:
+      type: array
+      items: {type: number}
+      description: Values in the order of `feature_names`
+    NodeChanged:
+      type: object
+      required: [op, node_id, type, thresholds, enabled]
+      properties:
+        op: {type: string, enum: [created, updated, deleted]}
+        node_id: {type: string}
+        type: {type: string, enum: [SPRING_BOOT, POSTGRES, LINUX]}
+        thresholds: {$ref: '#/components/schemas/Thresholds'}
+        enabled: {type: boolean}
+    FeaturesBuilt:
+      type: object
+      required: [node_id, window_start, window_s, vector, feature_names, schema_version]
+      properties:
+        node_id: {type: string}
+        window_start: {type: string, format: date-time}
+        window_s: {type: integer}
+        vector: {$ref: '#/components/schemas/Vector'}
+        feature_names:
+          type: array
+          items: {type: string}
+          description: "up, cpu_usage, memory_used_ratio, http_latency_p95_seconds, http_error_rate (per node type) then log_count, warn_ratio, error_ratio, weighted_severity, log_entropy"
+        schema_version: {type: integer, description: Feature-set version, const: 1}
+    ScoreComputed:
+      type: object
+      required: [analysis_id, node_id, window_start, score, active_rules, model_version, vector, feature_names]
+      properties:
+        analysis_id: {type: string, format: uuid}
+        node_id: {type: string}
+        window_start: {type: string, format: date-time}
+        score: {type: number, minimum: 0, maximum: 1}
+        active_rules:
+          type: array
+          items:
+            type: object
+            required: [id, strength]
+            properties:
+              id: {type: string}
+              strength: {type: number, description: Normalized firing strength, at least 0.1}
+        model_version: {type: integer}
+        vector: {$ref: '#/components/schemas/Vector'}
+        feature_names: {type: array, items: {type: string}}
+    StateClassified:
+      type: object
+      required: [analysis_id, node_id, window_start, state, score, model_version, vector, feature_names]
+      properties:
+        analysis_id: {type: string, format: uuid}
+        node_id: {type: string}
+        window_start: {type: string, format: date-time}
+        state: {type: string, enum: [NORMAL, WARNING, ANOMALY]}
+        score: {type: number}
+        model_version: {type: integer}
+        vector: {$ref: '#/components/schemas/Vector'}
+        feature_names: {type: array, items: {type: string}}
+    FeedbackSubmitted:
+      type: object
+      required: [feedback_id, analysis_id, node_id, verdict, vector, feature_names]
+      properties:
+        feedback_id: {type: string, format: uuid}
+        analysis_id: {type: string, format: uuid}
+        node_id: {type: string}
+        verdict: {type: string, enum: [CONFIRMED, FALSE_POSITIVE, MISSED]}
+        cause:
+          type: [string, 'null']
+          enum: [DEPLOY, BACKUP, NOISY_LOGS, LOAD_SPIKE, OTHER, null]
+          description: Present for FALSE_POSITIVE
+        vector: {$ref: '#/components/schemas/Vector'}
+        feature_names: {type: array, items: {type: string}}
+    ModelActivated:
+      type: object
+      required: [version, schema_version, templates, normalization_bounds]
+      properties:
+        version: {type: integer}
+        schema_version: {type: integer, description: Feature-set version of the model}
+        templates: {type: array, items: {type: string}, description: Always empty in this prototype}
+        normalization_bounds:
+          type: object
+          additionalProperties: {$ref: '#/components/schemas/Bounds'}

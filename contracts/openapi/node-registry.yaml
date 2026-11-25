@@ -1,0 +1,228 @@
+openapi: 3.1.0
+info:
+  title: node-registry API (S1)
+  version: 1.0.0
+  summary: Registry of monitored nodes and node types
+  description: |
+    Reached through the nginx gateway (`/api/v1/...` is rewritten to `/v1/...` of the service).
+    Roles: `GET` is allowed to `engineer` and `admin`; `POST`, `PATCH`, `DELETE` are `admin` only.
+    Every change publishes `node.changed` (see asyncapi.yaml). Errors are RFC 9457 problem+json.
+  license: {name: Educational use, identifier: MIT}
+servers:
+  - url: http://localhost:8000/api
+security:
+  - ApiKey: []
+tags:
+  - name: nodes
+    description: Registry of nodes and node types
+paths:
+  /v1/nodes:
+    post:
+      operationId: createNode
+      tags: [nodes]
+      summary: Register a node (admin only)
+      description: Checks that Prometheus knows `up{instance="<node_id>"}`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateNode'}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Node'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '422': {$ref: '#/components/responses/Problem'}
+        '502': {$ref: '#/components/responses/GatewayError'}
+    get:
+      operationId: listNodes
+      tags: [nodes]
+      summary: List nodes
+      parameters:
+        - name: enabled
+          in: query
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Node'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '502': {$ref: '#/components/responses/GatewayError'}
+  /v1/nodes/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    get:
+      operationId: getNode
+      tags: [nodes]
+      summary: Get a node
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Node'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '502': {$ref: '#/components/responses/GatewayError'}
+    patch:
+      operationId: patchNode
+      tags: [nodes]
+      summary: Change thresholds or the enabled flag (admin only)
+      description: A field that is absent or null is left unchanged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PatchNode'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Node'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '502': {$ref: '#/components/responses/GatewayError'}
+    delete:
+      operationId: deleteNode
+      tags: [nodes]
+      summary: Delete a node (admin only)
+      responses:
+        '204': {description: Deleted}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '502': {$ref: '#/components/responses/GatewayError'}
+  /v1/nodes/{id}/queries:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    get:
+      operationId: getNodeQueries
+      tags: [nodes]
+      summary: PromQL query per metric of the node's type
+      responses:
+        '200':
+          description: Metric name to PromQL
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {type: string}
+                examples:
+                  - {up: 'up{instance="node-1"}', cpu_usage: 'cpu_usage{instance="node-1"}'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '502': {$ref: '#/components/responses/GatewayError'}
+  /v1/node-types:
+    get:
+      operationId: listNodeTypes
+      tags: [nodes]
+      summary: Node types with their metrics (PromQL templates)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [type, metrics]
+                  properties:
+                    type: {$ref: '#/components/schemas/NodeType'}
+                    metrics:
+                      type: object
+                      description: Metric name to PromQL template with an `{instance}` placeholder
+                      additionalProperties: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '502': {$ref: '#/components/responses/GatewayError'}
+components:
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        Demo keys come from `.env` (`ADMIN_API_KEY`, `ENGINEER_API_KEY`). The gateway maps the key to a user and
+        a role (`admin`, `engineer`) and forwards `X-User` / `X-Role` to the service.
+  schemas:
+    NodeType:
+      type: string
+      enum: [SPRING_BOOT, POSTGRES, LINUX]
+    Thresholds:
+      type: object
+      required: [warning, anomaly]
+      description: Both in [0,1] and `warning < anomaly`.
+      properties:
+        warning: {type: number, minimum: 0, maximum: 1}
+        anomaly: {type: number, minimum: 0, maximum: 1}
+    CreateNode:
+      type: object
+      required: [node_id, name, type, thresholds]
+      properties:
+        node_id: {type: string, minLength: 1}
+        name: {type: string, minLength: 1}
+        type: {$ref: '#/components/schemas/NodeType'}
+        thresholds: {$ref: '#/components/schemas/Thresholds'}
+    PatchNode:
+      type: object
+      properties:
+        thresholds: {$ref: '#/components/schemas/Thresholds'}
+        enabled: {type: boolean}
+    Node:
+      type: object
+      required: [node_id, name, type, thresholds, enabled, created_at]
+      properties:
+        node_id: {type: string}
+        name: {type: string}
+        type: {$ref: '#/components/schemas/NodeType'}
+        thresholds: {$ref: '#/components/schemas/Thresholds'}
+        enabled: {type: boolean}
+        created_at: {type: string, format: date-time}
+    Problem:
+      type: object
+      description: RFC 9457 problem details
+      required: [type, title, status]
+      properties:
+        type: {type: string, examples: ['about:blank']}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        instance: {type: string}
+  responses:
+    Problem:
+      description: Error (conflict, not found, unprocessable ...)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    BadRequest:
+      description: Validation failed (empty fields, unknown type, thresholds outside [0,1] or warning >= anomaly)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Unauthorized:
+      description: Missing or unknown X-API-Key (produced by the gateway)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Forbidden:
+      description: The role may not use this method (produced by the gateway)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    GatewayError:
+      description: Service down or unreachable (gateway answers 502, 503 or 504)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}

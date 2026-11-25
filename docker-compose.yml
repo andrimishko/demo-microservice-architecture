@@ -63,8 +63,18 @@ services:
     restart: "no"
 
   nginx:
-    image: nginx:1.27-alpine
-    volumes: ["./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro"]
+    image: nginx:1.27-alpine   # 1.27.5: upstream `resolve` needs >= 1.27.3
+    volumes: ["./infra/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro"]
+    environment:
+      NGINX_ENVSUBST_FILTER: API_KEY
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-admin-demo-key}
+      ENGINEER_API_KEY: ${ENGINEER_API_KEY:-engineer-demo-key}
+    # service_started only: `resolve` lets nginx start while a backend is down
+    depends_on:
+      node-registry: {condition: service_started}
+      fuzzy-inference: {condition: service_started}
+      operator-feedback: {condition: service_started}
+      anomaly-assessment: {condition: service_started}
     ports: ["8000:80"]
     networks: [internal]
     healthcheck:
