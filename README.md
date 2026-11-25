@@ -11,6 +11,8 @@ mock-observability/      імітація HTTP API Prometheus / OpenSearch / Ale
 node-registry/           S1: реєстр вузлів, REST + події node.changed (етап 2)
 feature-aggregator/      S2: вектори ознак на часове вікно, події features.built (етап 3)
 fuzzy-inference/       S3: нейро-нечітка модель (ролі inference і adaptation), версії моделі в MinIO (етап 4)
+anomaly-assessment/      S4: класифікація оцінок за порогами, алерти й ескалація (етап 5)
+operator-feedback/       S5: відгуки оператора, API + події feedback.submitted (етап 5)
 common/                  спільна бібліотека: EventEnvelope, Subjects, NATS auto-config, EventPublisher, health "nats"
 docker/service.Dockerfile  багатоетапна збірка будь-якого модуля (ARG MODULE)
 docker-compose.yml       інфраструктура (проєкт soa-lab3)

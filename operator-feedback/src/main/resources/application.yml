@@ -1,0 +1,20 @@
+spring:
+  application.name: operator-feedback
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://postgres:5432/detection}
+    username: ${DB_USER:detection}
+    password: ${DB_PASSWORD:detection}
+  flyway:
+    schemas: feedback
+    default-schema: feedback
+  jpa:
+    open-in-view: false
+    hibernate.ddl-auto: validate
+  mvc.problemdetails.enabled: true
+
+nats.url: ${NATS_URL:nats://nats:4222}
+
+management:
+  endpoint.health:
+    probes.enabled: true
+    group.readiness.include: readinessState,db,nats

@@ -1,0 +1,15 @@
+spring:
+  application.name: anomaly-assessment
+  mvc.problemdetails.enabled: true
+
+nats.url: ${NATS_URL:nats://nats:4222}
+registry.url: ${REGISTRY_URL:http://node-registry:8080}
+opensearch.url: ${OPENSEARCH_URL:http://mock-observability:8080}
+alertmanager.url: ${ALERTMANAGER_URL:http://mock-observability:8080}
+
+assessment.escalation-after: ${ESCALATION_AFTER:30s}
+
+management:
+  endpoint.health:
+    probes.enabled: true
+    group.readiness.include: readinessState,nats

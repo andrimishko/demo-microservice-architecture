@@ -24,6 +24,8 @@
     <module>node-registry</module>
     <module>feature-aggregator</module>
     <module>fuzzy-inference</module>
+    <module>anomaly-assessment</module>
+    <module>operator-feedback</module>
   </modules>
 
   <dependencyManagement>

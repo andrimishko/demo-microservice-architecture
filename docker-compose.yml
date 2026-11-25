@@ -169,6 +169,48 @@ services:
     networks: [internal]
     healthcheck: *fuzzy-health
 
+  anomaly-assessment:
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: {MODULE: anomaly-assessment}
+    environment:
+      NATS_URL: nats://nats:4222
+      REGISTRY_URL: http://node-registry:8080
+      OPENSEARCH_URL: http://mock-observability:8080
+      ALERTMANAGER_URL: http://mock-observability:8080
+      ESCALATION_AFTER: ${ESCALATION_AFTER:-30s}
+    depends_on:
+      nats: {condition: service_healthy}
+      node-registry: {condition: service_healthy}
+      mock-observability: {condition: service_healthy}
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  operator-feedback:
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: {MODULE: operator-feedback}
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/detection
+      DB_USER: ${POSTGRES_USER:-detection}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-detection}
+      NATS_URL: nats://nats:4222
+    depends_on:
+      nats: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   # Second shard: set SHARD_COUNT=2 in BOTH replicas (and restart the first), then add
   #
   # feature-aggregator-1:
