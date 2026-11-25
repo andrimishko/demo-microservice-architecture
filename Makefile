@@ -1,6 +1,6 @@
 MVN = docker run --rm -v "$(CURDIR)":/src -v soa-lab3-m2:/root/.m2 -w /src maven:3.9-eclipse-temurin-21 mvn -q -B
 
-.PHONY: build test up down ps logs nats-tail features-tail
+.PHONY: build test up down ps logs nats-tail features-tail scores-tail fake-feedback
 build:
 	$(MVN) verify
 test:
@@ -24,3 +24,14 @@ features-tail:
 	  'N="nats -s nats://nats:4222"; n=0; i=$$($$N stream info DETECTION -j | jq .state.last_seq); \
 	   while [ $$n -lt $(or $(N),5) ] && [ $$i -gt 0 ]; do m=$$($$N stream get DETECTION $$i); \
 	     case "$$m" in *"on Subject features.built"*) echo "$$m"; n=$$((n+1));; esac; i=$$((i-1)); done'
+# last N (default 5) score.computed messages, same backwards walk as features-tail
+scores-tail:
+	docker run --rm --network soa-lab3_internal natsio/nats-box sh -c \
+	  'N="nats -s nats://nats:4222"; n=0; i=$$($$N stream info DETECTION -j | jq .state.last_seq); \
+	   while [ $$n -lt $(or $(N),5) ] && [ $$i -gt 0 ]; do m=$$($$N stream get DETECTION $$i); \
+	     case "$$m" in *"on Subject score.computed"*) echo "$$m"; n=$$((n+1));; esac; i=$$((i-1)); done'
+# STAGE-4 TEST HELPER until S5 exists: publishes feedback.submitted by hand.
+# make fake-feedback VERDICT=FALSE_POSITIVE|MISSED|CONFIRMED [VECTOR='{"vector":[...],"feature_names":[...]}']
+fake-feedback:
+	docker run --rm --network soa-lab3_internal -v "$(CURDIR)/scripts":/scripts -e VERDICT="$(VERDICT)" -e VECTOR='$(VECTOR)' \
+	  natsio/nats-box sh /scripts/fake-feedback.sh

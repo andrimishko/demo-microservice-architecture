@@ -134,6 +134,41 @@ services:
       timeout: 3s
       retries: 20
 
+  fuzzy-inference:
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: {MODULE: fuzzy-inference}
+    environment: &fuzzy-env
+      SPRING_PROFILES_ACTIVE: inference
+      NATS_URL: nats://nats:4222
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    depends_on: &fuzzy-depends
+      nats: {condition: service_healthy}
+      minio: {condition: service_healthy}
+      minio-init: {condition: service_completed_successfully}
+    networks: [internal]
+    healthcheck: &fuzzy-health
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # exactly one replica: the single writer of new model versions
+  fuzzy-adaptation:
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: {MODULE: fuzzy-inference}
+    environment:
+      <<: *fuzzy-env
+      SPRING_PROFILES_ACTIVE: adaptation
+    depends_on: *fuzzy-depends
+    networks: [internal]
+    healthcheck: *fuzzy-health
+
   # Second shard: set SHARD_COUNT=2 in BOTH replicas (and restart the first), then add
   #
   # feature-aggregator-1:

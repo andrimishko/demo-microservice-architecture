@@ -9,6 +9,8 @@
 pom.xml                  батьківський Maven-POM (Spring Boot 3.4.1, Java 21)
 mock-observability/      імітація HTTP API Prometheus / OpenSearch / Alertmanager (етап 2)
 node-registry/           S1: реєстр вузлів, REST + події node.changed (етап 2)
+feature-aggregator/      S2: вектори ознак на часове вікно, події features.built (етап 3)
+fuzzy-inference/       S3: нейро-нечітка модель (ролі inference і adaptation), версії моделі в MinIO (етап 4)
 common/                  спільна бібліотека: EventEnvelope, Subjects, NATS auto-config, EventPublisher, health "nats"
 docker/service.Dockerfile  багатоетапна збірка будь-якого модуля (ARG MODULE)
 docker-compose.yml       інфраструктура (проєкт soa-lab3)

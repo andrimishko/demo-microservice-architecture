@@ -1,0 +1,17 @@
+spring:
+  application.name: fuzzy-inference
+  mvc.problemdetails.enabled: true
+
+nats.url: ${NATS_URL:nats://nats:4222}
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://minio:9000}
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin123}
+  bucket: ${MINIO_BUCKET:models}
+
+adaptation.eta: ${ADAPTATION_ETA:0.5}
+
+management:
+  endpoint.health:
+    probes.enabled: true
+    group.readiness.include: readinessState,nats

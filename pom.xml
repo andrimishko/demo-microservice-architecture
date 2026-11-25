@@ -23,6 +23,7 @@
     <module>mock-observability</module>
     <module>node-registry</module>
     <module>feature-aggregator</module>
+    <module>fuzzy-inference</module>
   </modules>
 
   <dependencyManagement>

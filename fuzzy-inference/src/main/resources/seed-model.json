@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "schema_version": 1,
+  "feature_names": ["cpu_usage", "http_latency_p95_seconds", "error_ratio", "warn_ratio"],
+  "normalization": {
+    "cpu_usage": {"min": 0, "max": 1},
+    "http_latency_p95_seconds": {"min": 0, "max": 2},
+    "error_ratio": {"min": 0, "max": 1},
+    "warn_ratio": {"min": 0, "max": 1}
+  },
+  "rules": [
+    {"id": "R1", "consequent": 0.05, "antecedent": [
+      {"feature": "cpu_usage", "term": "LOW", "center": 0.0, "width": 0.15},
+      {"feature": "error_ratio", "term": "LOW", "center": 0.0, "width": 0.25}]},
+    {"id": "R2", "consequent": 0.95, "antecedent": [
+      {"feature": "cpu_usage", "term": "HIGH", "center": 1.0, "width": 0.25},
+      {"feature": "http_latency_p95_seconds", "term": "HIGH", "center": 1.0, "width": 0.25}]},
+    {"id": "R3", "consequent": 0.9, "antecedent": [
+      {"feature": "error_ratio", "term": "HIGH", "center": 1.0, "width": 0.25}]},
+    {"id": "R4", "consequent": 0.75, "antecedent": [
+      {"feature": "warn_ratio", "term": "HIGH", "center": 1.0, "width": 0.25}]}
+  ]
+}
