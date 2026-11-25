@@ -1,0 +1,21 @@
+spring:
+  application.name: node-registry
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://postgres:5432/detection}
+    username: ${DB_USER:detection}
+    password: ${DB_PASSWORD:detection}
+  flyway:
+    schemas: registry
+    default-schema: registry
+  jpa:
+    open-in-view: false
+    hibernate.ddl-auto: validate
+  mvc.problemdetails.enabled: true
+
+nats.url: ${NATS_URL:nats://nats:4222}
+prometheus.url: ${PROMETHEUS_URL:http://mock-observability:8080}
+
+management:
+  endpoint.health:
+    probes.enabled: true
+    group.readiness.include: readinessState,db,nats

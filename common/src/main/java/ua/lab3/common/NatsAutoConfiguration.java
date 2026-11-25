@@ -11,7 +11,6 @@ import io.nats.client.api.StreamConfiguration;
 import java.io.IOException;
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.context.annotation.Bean;
 
@@ -24,8 +23,19 @@ public class NatsAutoConfiguration {
                 .reconnectWait(Duration.ofSeconds(2)).build());
     }
 
+    /** Ensures the stream exists before anything can publish or consume; idempotent (10059 = stream not found). */
     @Bean
-    JetStream jetStream(Connection c) throws IOException {
+    JetStream jetStream(Connection c) throws IOException, JetStreamApiException {
+        JetStreamManagement jsm = c.jetStreamManagement();
+        StreamConfiguration cfg = StreamConfiguration.builder().name(Subjects.STREAM)
+                .subjects(Subjects.ALL).storageType(StorageType.File)
+                .duplicateWindow(Duration.ofMinutes(2)).build();
+        try {
+            jsm.updateStream(cfg);
+        } catch (JetStreamApiException e) {
+            if (e.getApiErrorCode() != 10059) throw e;
+            jsm.addStream(cfg);
+        }
         return c.jetStream();
     }
 
@@ -37,22 +47,5 @@ public class NatsAutoConfiguration {
     @Bean
     NatsHealthIndicator natsHealthIndicator(Connection c) {
         return new NatsHealthIndicator(c);
-    }
-
-    /** Idempotent: update if the stream exists, create otherwise (10059 = stream not found). */
-    @Bean
-    ApplicationRunner detectionStream(Connection c) {
-        return args -> {
-            JetStreamManagement jsm = c.jetStreamManagement();
-            StreamConfiguration cfg = StreamConfiguration.builder().name(Subjects.STREAM)
-                    .subjects(Subjects.ALL).storageType(StorageType.File)
-                    .duplicateWindow(Duration.ofMinutes(2)).build();
-            try {
-                jsm.updateStream(cfg);
-            } catch (JetStreamApiException e) {
-                if (e.getApiErrorCode() != 10059) throw e;
-                jsm.addStream(cfg);
-            }
-        };
     }
 }

@@ -20,6 +20,8 @@
 
   <modules>
     <module>common</module>
+    <module>mock-observability</module>
+    <module>node-registry</module>
   </modules>
 
   <dependencyManagement>

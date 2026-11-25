@@ -38,7 +38,6 @@ services:
       retries: 10
 
   minio:
-    # MinIO left Docker Hub; chainguard mirror is the free pullable build
     image: cgr.dev/chainguard/minio
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -73,3 +72,40 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  mock-observability:
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: {MODULE: mock-observability}
+    environment:
+      MOCK_NODES: ${MOCK_NODES:-node-1,node-2,node-3}
+    ports: ["8090:8080"]
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  node-registry:
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: {MODULE: node-registry}
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/detection
+      DB_USER: ${POSTGRES_USER:-detection}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-detection}
+      NATS_URL: nats://nats:4222
+      PROMETHEUS_URL: http://mock-observability:8080
+    depends_on:
+      nats: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+      mock-observability: {condition: service_healthy}
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
