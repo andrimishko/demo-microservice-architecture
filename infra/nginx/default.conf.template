@@ -48,6 +48,7 @@ log_format gateway '$remote_addr [$time_local] "$request" $status $body_bytes_se
 server {
     listen 80;
     access_log /var/log/nginx/access.log gateway;   # replaces the image's default `main` log
+    absolute_redirect off;   # relative Location, so redirects keep the published host port (8000, not 80)
 
     location = /health { return 200 'ok'; }
 
@@ -71,6 +72,17 @@ server {
         proxy_next_upstream_tries 3;
         proxy_connect_timeout 2s;
         proxy_read_timeout 10s;
+    }
+
+    # API docs: raw contracts + Swagger UI on the same origin, so "Try it out" calls /api/v1 without CORS.
+    location /docs/specs/ {
+        alias /usr/share/nginx/contracts/;
+        default_type application/yaml;
+    }
+    location = /docs { return 301 /docs/; }
+    location /docs/ {
+        set $docs_upstream swagger-ui:8080;   # variable => resolved per request, nginx starts even if swagger-ui is down
+        proxy_pass http://$docs_upstream;
     }
 
     location / { return 404; }

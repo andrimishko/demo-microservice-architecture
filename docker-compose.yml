@@ -78,7 +78,9 @@ services:
   nginx:
     <<: *service-defaults
     image: nginx:1.27-alpine   # 1.27.5: upstream `resolve` needs >= 1.27.3
-    volumes: ["./infra/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro"]
+    volumes:
+      - ./infra/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./contracts:/usr/share/nginx/contracts:ro
     environment:
       NGINX_ENVSUBST_FILTER: API_KEY
       ADMIN_API_KEY: ${ADMIN_API_KEY:-admin-demo-key}
@@ -93,6 +95,25 @@ services:
     networks: [internal]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  swagger-ui:
+    <<: *service-defaults
+    image: swaggerapi/swagger-ui:v5.17.14
+    environment:
+      BASE_URL: /docs
+      PERSIST_AUTHORIZATION: "true"
+      URLS_PRIMARY_NAME: "S5 operator-feedback"
+      URLS: >-
+        [{"url":"/docs/specs/openapi/node-registry.yaml","name":"S1 node-registry"},
+        {"url":"/docs/specs/openapi/fuzzy-inference.yaml","name":"S3 fuzzy-inference"},
+        {"url":"/docs/specs/openapi/anomaly-assessment.yaml","name":"S4 anomaly-assessment"},
+        {"url":"/docs/specs/openapi/operator-feedback.yaml","name":"S5 operator-feedback"}]
+    networks: [internal]
+    healthcheck:   # demo/lib.sh waits until every service is healthy
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/docs/"]
       interval: 5s
       timeout: 3s
       retries: 10
