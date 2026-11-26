@@ -1,6 +1,6 @@
 MVN = docker run --rm -v "$(CURDIR)":/src -v soa-lab3-m2:/root/.m2 -w /src maven:3.9-eclipse-temurin-21 mvn -q -B
 
-.PHONY: lint-contracts build test up down ps logs nats-tail features-tail scores-tail fake-feedback alerts feedback-stats
+.PHONY: lint-contracts build test e2e reset up down ps logs nats-tail features-tail scores-tail fake-feedback alerts feedback-stats
 build:
 	$(MVN) verify
 test:
@@ -47,3 +47,16 @@ feedback-stats:
 lint-contracts:
 	docker run --rm -v "$(CURDIR)/contracts":/spec -w /spec redocly/cli:1.34.5 lint openapi/*.yaml
 	docker run --rm -e ASYNCAPI_METRICS=false -v "$(CURDIR)/contracts":/spec asyncapi/cli:3.4.1 validate /spec/asyncapi.yaml
+
+# automated end-to-end test against the running stack (through the gateway); `make test` skips it
+e2e:
+	docker run --rm -v "$(CURDIR)":/src -v soa-lab3-m2:/root/.m2 -w /src maven:3.9-eclipse-temurin-21 \
+	  mvn -B -pl e2e -DexcludedGroups=none -Dgroups=e2e -De2e.gateway=http://host.docker.internal:8000 \
+	  -De2e.mock=http://host.docker.internal:8090 test
+
+# wipe ONLY this project's containers and volumes (soa-lab3), rebuild, wait until healthy, seed demo data
+reset:
+	docker compose -p soa-lab3 down -v
+	docker compose up -d --build
+	demo/wait-healthy.sh
+	demo/seed.sh

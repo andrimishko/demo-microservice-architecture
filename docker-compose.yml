@@ -1,5 +1,15 @@
 name: soa-lab3
 
+# restart: unless-stopped respects a manual `docker compose stop` (the demos rely on it) and
+# does not bring the stack back after a Docker restart if it was stopped; logs capped at 3x10 MB.
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
 networks:
   internal:
 
@@ -10,6 +20,7 @@ volumes:
 
 services:
   nats:
+    <<: *service-defaults
     image: nats:2.10-alpine
     command: ["-js", "-sd", "/data", "-m", "8222"]
     volumes: [nats-data:/data]
@@ -22,6 +33,7 @@ services:
       retries: 10
 
   postgres:
+    <<: *service-defaults
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: detection
@@ -38,6 +50,7 @@ services:
       retries: 10
 
   minio:
+    <<: *service-defaults
     image: cgr.dev/chainguard/minio
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -63,6 +76,7 @@ services:
     restart: "no"
 
   nginx:
+    <<: *service-defaults
     image: nginx:1.27-alpine   # 1.27.5: upstream `resolve` needs >= 1.27.3
     volumes: ["./infra/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro"]
     environment:
@@ -84,6 +98,7 @@ services:
       retries: 10
 
   mock-observability:
+    <<: *service-defaults
     build:
       context: .
       dockerfile: docker/service.Dockerfile
@@ -99,6 +114,7 @@ services:
       retries: 20
 
   node-registry:
+    <<: *service-defaults
     build:
       context: .
       dockerfile: docker/service.Dockerfile
@@ -121,6 +137,7 @@ services:
       retries: 20
 
   feature-aggregator-0:
+    <<: *service-defaults
     build:
       context: .
       dockerfile: docker/service.Dockerfile
@@ -145,6 +162,7 @@ services:
       retries: 20
 
   fuzzy-inference:
+    <<: *service-defaults
     build:
       context: .
       dockerfile: docker/service.Dockerfile
@@ -168,6 +186,7 @@ services:
 
   # exactly one replica: the single writer of new model versions
   fuzzy-adaptation:
+    <<: *service-defaults
     build:
       context: .
       dockerfile: docker/service.Dockerfile
@@ -180,6 +199,7 @@ services:
     healthcheck: *fuzzy-health
 
   anomaly-assessment:
+    <<: *service-defaults
     build:
       context: .
       dockerfile: docker/service.Dockerfile
@@ -202,6 +222,7 @@ services:
       retries: 20
 
   operator-feedback:
+    <<: *service-defaults
     build:
       context: .
       dockerfile: docker/service.Dockerfile

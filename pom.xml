@@ -26,6 +26,7 @@
     <module>fuzzy-inference</module>
     <module>anomaly-assessment</module>
     <module>operator-feedback</module>
+    <module>e2e</module>
   </modules>
 
   <dependencyManagement>

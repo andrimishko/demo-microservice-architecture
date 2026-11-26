@@ -9,3 +9,8 @@ window.seconds: ${WINDOW_SECONDS:10}
 shard:
   index: ${SHARD_INDEX:0}
   count: ${SHARD_COUNT:1}
+
+management:
+  endpoint.health:
+    probes.enabled: true
+    group.readiness.include: readinessState,nats

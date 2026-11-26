@@ -53,4 +53,12 @@ class NodeControllerTest {
         when(service.create(any())).thenThrow(new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "no metrics"));
         expectProblem(body("0.5", "0.8"), HttpStatus.UNPROCESSABLE_ENTITY);
     }
+
+    @Test
+    void brokerOrDatabaseDownIs503() throws Exception {
+        when(service.create(any())).thenThrow(new ua.lab3.common.BrokerUnavailableException("publish failed", null));
+        expectProblem(body("0.5", "0.8"), HttpStatus.SERVICE_UNAVAILABLE);
+        org.mockito.Mockito.doThrow(new org.springframework.transaction.CannotCreateTransactionException("db down")).when(service).create(any());
+        expectProblem(body("0.5", "0.8"), HttpStatus.SERVICE_UNAVAILABLE);
+    }
 }

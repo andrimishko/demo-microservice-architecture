@@ -4,6 +4,7 @@ spring:
     url: ${DB_URL:jdbc:postgresql://postgres:5432/detection}
     username: ${DB_USER:detection}
     password: ${DB_PASSWORD:detection}
+    hikari.connection-timeout: 3000   # DB down => fail in 3 s (503), not after Hikari's 30 s default (the gateway waits 10 s)
   flyway:
     schemas: registry
     default-schema: registry

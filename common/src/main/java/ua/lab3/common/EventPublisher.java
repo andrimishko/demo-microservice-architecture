@@ -23,7 +23,7 @@ public class EventPublisher {
             Headers h = new Headers().add("Nats-Msg-Id", msgId);
             return js.publish(subject, h, EventEnvelope.MAPPER.writeValueAsString(event).getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
-            throw new IllegalStateException("publish to " + subject + " failed", e);
+            throw new BrokerUnavailableException("publish to " + subject + " failed", e);
         }
     }
 }

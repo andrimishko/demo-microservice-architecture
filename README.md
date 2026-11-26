@@ -18,6 +18,7 @@ docker/service.Dockerfile  багатоетапна збірка будь-яко
 docker-compose.yml       інфраструктура (проєкт soa-lab3)
 infra/                   init.sql для Postgres, default.conf.template для nginx (шлюз, етап 6)
 contracts/               OpenAPI 3.1 (4 REST-сервіси) і AsyncAPI 3.0 (події NATS), етап 6
+e2e/                     автоматичний наскрізний тест через шлюз (JUnit 5), етап 7
 ```
 
 ## Запуск

@@ -43,4 +43,13 @@ class FeedbackControllerTest {
         doThrow(new ResponseStatusException(HttpStatus.CONFLICT, "exists")).when(service).submit(any(), any());
         expectProblem("/v1/feedback", body, HttpStatus.CONFLICT);
     }
+
+    @Test
+    void brokerOrDatabaseDownIs503() throws Exception {
+        String body = "{\"analysis_id\":\"a\",\"verdict\":\"CONFIRMED\"}";
+        doThrow(new ua.lab3.common.BrokerUnavailableException("publish failed", null)).when(service).submit(any(), any());
+        expectProblem("/v1/feedback", body, HttpStatus.SERVICE_UNAVAILABLE);
+        doThrow(new org.springframework.transaction.CannotCreateTransactionException("db down")).when(service).submit(any(), any());
+        expectProblem("/v1/feedback", body, HttpStatus.SERVICE_UNAVAILABLE);
+    }
 }

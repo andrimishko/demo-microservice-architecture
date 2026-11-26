@@ -4,11 +4,11 @@
 resolver 127.0.0.11 valid=10s ipv6=off;   # Docker's embedded DNS; re-resolved every 10 s, so replicas appear/disappear
 
 # `resolve` makes nginx track the DNS A records of the service name: every replica of a compose service becomes a server.
-# max_fails/fail_timeout = passive health check: 3 failures in a row take the replica out for 10 s.
-upstream node_registry     { zone node_registry 64k;     server node-registry:8080     resolve max_fails=3 fail_timeout=10s; }
-upstream fuzzy_inference   { zone fuzzy_inference 64k;   server fuzzy-inference:8080   resolve max_fails=3 fail_timeout=10s; }
-upstream operator_feedback { zone operator_feedback 64k; server operator-feedback:8080 resolve max_fails=3 fail_timeout=10s; }
-upstream anomaly_assessment{ zone anomaly_assessment 64k; server anomaly-assessment:8080 resolve max_fails=3 fail_timeout=10s; }
+# max_fails/fail_timeout = passive health check: one failed attempt takes the replica out for 10 s (until DNS drops it).
+upstream node_registry     { zone node_registry 64k;     server node-registry:8080     resolve max_fails=1 fail_timeout=10s; }
+upstream fuzzy_inference   { zone fuzzy_inference 64k;   server fuzzy-inference:8080   resolve max_fails=1 fail_timeout=10s; }
+upstream operator_feedback { zone operator_feedback 64k; server operator-feedback:8080 resolve max_fails=1 fail_timeout=10s; }
+upstream anomaly_assessment{ zone anomaly_assessment 64k; server anomaly-assessment:8080 resolve max_fails=1 fail_timeout=10s; }
 
 # API key -> identity. An unknown or missing key maps to "" (=> 401).
 map $http_x_api_key $gw_user {
